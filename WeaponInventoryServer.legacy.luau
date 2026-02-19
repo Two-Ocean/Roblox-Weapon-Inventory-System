@@ -1,15 +1,21 @@
 --!nonstrict
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
+local ProfileStore = require(game.ServerScriptService.Modules.ProfileStore)
+
+local conn1
+local conn2
+
+local weaponProfile = ProfileStore.New("WeaponInventory", {
+	Weapons = {}
+})
+local Profiles: {[Player]: typeof(weaponProfile:StartSessionAsync())} = {}
 
 local WeaponLevel = require(script.Parent.Weapon.WeaponLevel)
 local WeaponInventory = require(script.Parent.WeaponInventory)
 
+local NetPackets = require(ReplicatedStorage.NetPackets)
 
-local sampleData = {
-	current = {LevelRank = 1, RequiredXP = 0},
-	XP = 100,
-}
 local commonBase = {{LevelRank = 1, RequiredXP = 0}}
 
 local function generateLevelsWithBase(maxLevel, xpMultiplier)
@@ -30,13 +36,130 @@ WeaponLevel.InitializeLevelsByRarity("Rare", generateLevelsWithBase(25, 125))
 WeaponLevel.InitializeLevelsByRarity("Epic", generateLevelsWithBase(50, 200))
 WeaponLevel.InitializeLevelsByRarity("Legendary", generateLevelsWithBase(100, 500))
 
+local function saveInventory(player)
+	local profile = Profiles[player]
+	local inventory = WeaponInventory.GetInventory(player)
+	if not profile or not inventory then return end
+
+	local savedWeapons = {}
+	for _, weaponData in ipairs(inventory:GetInventoryData()) do
+		table.insert(savedWeapons, {
+			modelname = weaponData.name,
+			levelData = {
+				current = { LevelRank = weaponData.level, RequiredXP = weaponData.maxXP },
+				XP = weaponData.xp,
+			}
+		})
+	end
+
+	profile.Data.Weapons = savedWeapons
+end
 
 Players.PlayerAdded:Connect(function(player)
-	player.CharacterAdded:Once(function(char)
-		local playerInv = WeaponInventory.new(player)
-	end)
+	local profile = weaponProfile:StartSessionAsync(`{player.UserId}`, {
+		Cancel = function()
+			return player.Parent ~= Players
+		end,
+	})
+
+	if profile ~= nil then
+		profile:AddUserId(player.UserId)
+		profile:Reconcile()
+
+		profile.OnSessionEnd:Connect(function()
+			Profiles[player] = nil
+			player:Kick(`Profile session end - Please rejoin`)
+		end)
+
+		if player.Parent == Players then
+			Profiles[player] = profile
+
+			local playerInv = WeaponInventory.new(player)
+			for _, weaponData in ipairs(profile.Data.Weapons) do
+				playerInv:AddWeapon(
+					game.ServerStorage.Weapons:FindFirstChild(weaponData.modelname),
+					{ current = weaponData.levelData.current, XP = weaponData.levelData.XP }
+				)
+			end
+
+			local function onCharacterAdded(char)
+				playerInv:UpdatePlayerCharacter(char)
+				local equippedWeapon = playerInv:GetEquippedWeapon()
+				if equippedWeapon then
+					equippedWeapon:Equip() 
+				end
+			end
+
+			conn1 = player.CharacterAdded:Connect(onCharacterAdded)
+			if player.Character then onCharacterAdded(player.Character) end
+
+			conn2 = player.CharacterRemoving:Connect(function(char)
+				local inventory = WeaponInventory.GetInventory(player)
+				if inventory then
+					inventory:UnequipWeapon()
+				end
+			end)
+		end
+	else
+		player:Kick(`Profile load fail - Please rejoin`)
+	end
+end)
+
+Players.PlayerRemoving:Connect(function(player)
+	saveInventory(player)
+
+	local profile = Profiles[player]
+	if profile ~= nil then
+		profile:EndSession()
+	end
+
+	local inventory = WeaponInventory.GetInventory(player)
+	if inventory then
+		inventory:Destroy()
+	end
+	conn1:Disconnect()
+	conn2:Disconnect()
+	conn1 = nil
+	conn2 = nil
+end)
+
+NetPackets.GetInventoryData.OnServerInvoke = function(player)
+	local inventory = WeaponInventory.GetInventory(player)
+	if inventory then
+		return inventory:GetInventoryData()
+	end
+	return {}
+end
+
+NetPackets.EquipWeapon.OnServerEvent:Connect(function(player, index)
+	local inventory = WeaponInventory.GetInventory(player)
+	if inventory then
+		inventory:EquipWeapon(index)
+	end
+end)
+
+NetPackets.UnequipWeapon.OnServerEvent:Connect(function(player, index)
+	local inventory = WeaponInventory.GetInventory(player)
+	if inventory then
+		inventory:UnequipWeapon()
+	end
+end)
+
+NetPackets.DeleteWeapon.OnServerEvent:Connect(function(player, index)
+	local inventory = WeaponInventory.GetInventory(player)
+	if inventory then
+		inventory:RemoveWeapon(index)
+	end
 end)
 
 print("Weapon Inventory System initialized")
 
 
+--local WeaponInventory = require(game.ServerScriptService.WeaponInventory)
+--local inventory = WeaponInventory.GetInventory(game.Players.YPCOcean)
+--if inventory then
+--	inventory:AddWeapon(game.ServerStorage.Weapons.Fairfrozen,{
+--		current = {LevelRank = 1, RequiredXP = 0},
+--		XP = 150,
+--	} )
+--end

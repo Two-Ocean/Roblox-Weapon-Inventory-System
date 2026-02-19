@@ -49,7 +49,7 @@ function Weapon:Equip()
 	self.weaponModel.Parent = self.ownerChar:FindFirstChild("Hilt", true)
 	self.weaponModel:FindFirstChild("PropWeld").Part0 = self.ownerChar.Hilt
 
-	self.sheatheModel = self.ownerChar.Torso:FindFirstChild(self.name)
+	self.sheatheModel = self.ownerChar.Torso:FindFirstChild(self.weaponModelName)
 
 	WeaponLevel.SyncAttributes(self.weaponModel, self.weaponKey)
 
@@ -105,6 +105,10 @@ function Weapon:AwardXP(xp)
 	if self.isEquipped and self.weaponModel then
 		WeaponLevel.SyncAttributes(self.weaponModel, self.weaponKey)
 	end
+end
+
+function Weapon:UpdatePlayerCharacter(char)
+	self.ownerChar = char
 end
 
 function Weapon:Destroy()

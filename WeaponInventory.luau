@@ -3,7 +3,13 @@ local Weapon = require(script.Parent.Weapon)
 local WeaponInventory = {}
 WeaponInventory.__index = WeaponInventory
 
+local PlayerInventories = {}
+
 function WeaponInventory.new(player)
+	if PlayerInventories[player.UserId] then
+		return PlayerInventories[player.UserId]
+	end
+	
 	local self = setmetatable({}, WeaponInventory)
 	self.player = player
 	self.weapons = {}
@@ -11,7 +17,12 @@ function WeaponInventory.new(player)
 	self.equippedIndex = nil
 	self.maxWeapons = 10 
 	
+	PlayerInventories[player.UserId] = self
 	return self
+end
+
+function WeaponInventory.GetInventory(player)
+	return PlayerInventories[player.UserId]
 end
 
 function WeaponInventory:AddWeapon(weaponModel, data)
@@ -23,7 +34,7 @@ function WeaponInventory:AddWeapon(weaponModel, data)
 	table.insert(self.weapons, weapon)
 end
 
-function WeaponInventory:RemoveWeapon(index)
+function WeaponInventory:RemoveWeapon(index: number)
 	if index < 1 or index > #self.weapons then
 		warn("Invalid weapon index:", index)
 		return false
@@ -44,6 +55,7 @@ function WeaponInventory:RemoveWeapon(index)
 		self.equippedIndex = self.equippedIndex - 1
 	end
 	
+	self.weapons[index]:Destroy()
 	table.remove(self.weapons, index)
 end
 
@@ -92,13 +104,20 @@ function WeaponInventory:GetInventoryData()
 			name = weapon.weaponModelName,
 			rarity = weapon:GetRarity(),
 			weaponType = weapon:GetWeaponType(),
-			level = weapon:GetLevelData(),
+			level = weapon:GetLevelData().Current.LevelRank,
 			xp = weapon:GetLevelData().CurrentXP,
 			maxXP = weapon:GetNextLevel().RequiredXP,
 			isEquipped = (i == self.equippedIndex)
 		})
 	end
 	return inventoryData
+end
+
+function WeaponInventory:UpdatePlayerCharacter(char)
+	for _, weapon in ipairs(self.weapons) do
+		weapon.ownerChar = nil
+		weapon:UpdatePlayerCharacter(char)
+	end
 end
 
 function WeaponInventory:Destroy()
@@ -108,6 +127,7 @@ function WeaponInventory:Destroy()
 	self.weapons = {}
 	self.equippedWeapon = nil
 	self.equippedIndex = nil
+	PlayerInventories[self.player.UserId] = nil
 end
 
 return WeaponInventory
