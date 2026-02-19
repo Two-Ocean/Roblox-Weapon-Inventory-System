@@ -47,7 +47,8 @@ local function saveInventory(player)
 			levelData = {
 				current = { LevelRank = weaponData.level, RequiredXP = weaponData.maxXP },
 				XP = weaponData.xp,
-			}
+			},
+			isEquipped = weaponData.isEquipped,
 		})
 	end
 
@@ -80,6 +81,9 @@ Players.PlayerAdded:Connect(function(player)
 					game.ServerStorage.Weapons:FindFirstChild(weaponData.modelname),
 					{ current = weaponData.levelData.current, XP = weaponData.levelData.XP }
 				)
+				if weaponData.isEquipped == true then
+					playerInv:EquipWeapon(_)
+				end
 			end
 
 			local function onCharacterAdded(char)
