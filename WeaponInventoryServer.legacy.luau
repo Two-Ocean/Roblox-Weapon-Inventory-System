@@ -3,8 +3,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 local ProfileStore = require(game.ServerScriptService.Modules.ProfileStore)
 
-local conn1
-local conn2
+local connections = {}
 
 local weaponProfile = ProfileStore.New("WeaponInventory", {
 	Weapons = {}
@@ -56,6 +55,7 @@ local function saveInventory(player)
 end
 
 Players.PlayerAdded:Connect(function(player)
+	connections[player] = {}
 	local profile = weaponProfile:StartSessionAsync(`{player.UserId}`, {
 		Cancel = function()
 			return player.Parent ~= Players
@@ -84,21 +84,26 @@ Players.PlayerAdded:Connect(function(player)
 
 			local function onCharacterAdded(char)
 				playerInv:UpdatePlayerCharacter(char)
-				local equippedWeapon = playerInv:GetEquippedWeapon()
-				if equippedWeapon then
-					equippedWeapon:Equip() 
+				local equippedWeaponIndex = player:GetAttribute("WeaponEquipped")
+				print(equippedWeaponIndex)
+				if equippedWeaponIndex then
+					playerInv:EquipWeapon(equippedWeaponIndex)
 				end
+				player:SetAttribute("WeaponEquipped", nil)
+
+				if connections[player].died then connections[player].died:Disconnect() end
+				connections[player].died = player.Character.Humanoid.Died:Connect(function(char)
+					local inventory = WeaponInventory.GetInventory(player)
+					if inventory then
+						player:SetAttribute("WeaponEquipped", inventory.equippedIndex)
+						inventory:UnequipWeapon()
+					end
+				end)
 			end
 
-			conn1 = player.CharacterAdded:Connect(onCharacterAdded)
+			connections[player].char = player.CharacterAdded:Connect(onCharacterAdded)
 			if player.Character then onCharacterAdded(player.Character) end
 
-			conn2 = player.CharacterRemoving:Connect(function(char)
-				local inventory = WeaponInventory.GetInventory(player)
-				if inventory then
-					inventory:UnequipWeapon()
-				end
-			end)
 		end
 	else
 		player:Kick(`Profile load fail - Please rejoin`)
@@ -117,10 +122,12 @@ Players.PlayerRemoving:Connect(function(player)
 	if inventory then
 		inventory:Destroy()
 	end
-	conn1:Disconnect()
-	conn2:Disconnect()
-	conn1 = nil
-	conn2 = nil
+	
+	if connections[player] then
+		if connections[player].char then connections[player].char:Disconnect() end
+		if connections[player].died then connections[player].died:Disconnect() end
+		connections[player] = nil
+	end
 end)
 
 NetPackets.GetInventoryData.OnServerInvoke = function(player)
